@@ -1,10 +1,17 @@
 #include "I3G4250D_Driver.h"
 #include "spi.h"
+#include "main.h"
+#include "stdio.h"
+#include "string.h"
 
 #define FILTER_SIZE                          10u
-#define CALIBRATION_BUFFER_LENGTH            2000u
+#define CALIBRATION_tx_buffer_LENGTH            2000u
 #define GYROSCOPE_SENSITIVITY    			 0.07f
+#define tx_buffer_SIZE					 		 100
 
+UART_HandleTypeDef huart1;
+char tx_buffer[tx_buffer_SIZE];
+char rx_buffer[2];
 
 typedef enum
 {
@@ -57,12 +64,13 @@ static int32_t TempNoise_Z = 0;
 
 volatile static uint32_t caliCounter = 0;
 
-static int16_t calibrationBuffer_X[CALIBRATION_BUFFER_LENGTH];
-static int16_t calibrationBuffer_Y[CALIBRATION_BUFFER_LENGTH];
-static int16_t calibrationBuffer_Z[CALIBRATION_BUFFER_LENGTH];
+static int16_t calibrationtx_buffer_X[CALIBRATION_tx_buffer_LENGTH];
+static int16_t calibrationtx_buffer_Y[CALIBRATION_tx_buffer_LENGTH];
+static int16_t calibrationtx_buffer_Z[CALIBRATION_tx_buffer_LENGTH];
 
 static uint8_t spiTxBuf[2];
 static uint8_t spiRxBuf[7];
+
 
 void Gyroscope_Init(void)
 {
@@ -148,7 +156,7 @@ static void SPI_READ(void)
 
 }
 
-static void Gyroscope_Calibration(void)
+void Gyroscope_Calibration(void)
 {
 	volatile int16_t Buff_x=0;
 	volatile int16_t Buff_y=0;
@@ -197,27 +205,27 @@ static void Gyroscope_Calibration(void)
 		switch(currentCallibrationState)
 		{
 			case(COLLECT_SAMPLES):
-				calibrationBuffer_X[caliCounter]=Buff_x;
-				calibrationBuffer_Y[caliCounter]=Buff_y;
-				calibrationBuffer_Z[caliCounter]=Buff_z;
+				calibrationtx_buffer_X[caliCounter]=Buff_x;
+				calibrationtx_buffer_Y[caliCounter]=Buff_y;
+				calibrationtx_buffer_Z[caliCounter]=Buff_z;
 				caliCounter++;
 
-				if(caliCounter>=CALIBRATION_BUFFER_LENGTH)
+				if(caliCounter>=CALIBRATION_tx_buffer_LENGTH)
 				{
 					caliCounter=0;
 					currentCallibrationState=PROCESS_SAMPLES;
 				}
 				break;
 			case(PROCESS_SAMPLES):
-				for(uint32_t i=0; i<CALIBRATION_BUFFER_LENGTH;i++)
+				for(uint32_t i=0; i<CALIBRATION_tx_buffer_LENGTH;i++)
 				{
-					tempSum_X=tempSum_X-avarageFilter_X[filterRate]+calibrationBuffer_X[i];
-					tempSum_Y=tempSum_Y-avarageFilter_Y[filterRate]+calibrationBuffer_Y[i];
-					tempSum_Z=tempSum_Z-avarageFilter_Z[filterRate]+calibrationBuffer_Z[i];
+					tempSum_X=tempSum_X-avarageFilter_X[filterRate]+calibrationtx_buffer_X[i];
+					tempSum_Y=tempSum_Y-avarageFilter_Y[filterRate]+calibrationtx_buffer_Y[i];
+					tempSum_Z=tempSum_Z-avarageFilter_Z[filterRate]+calibrationtx_buffer_Z[i];
 
-					avarageFilter_X[filterRate]=calibrationBuffer_X[i];
-					avarageFilter_Y[filterRate]=calibrationBuffer_Y[i];
-					avarageFilter_Z[filterRate]=calibrationBuffer_Z[i];
+					avarageFilter_X[filterRate]=calibrationtx_buffer_X[i];
+					avarageFilter_Y[filterRate]=calibrationtx_buffer_Y[i];
+					avarageFilter_Z[filterRate]=calibrationtx_buffer_Z[i];
 
 					offset_x=tempSum_X/(int32_t)FILTER_SIZE;
 					offset_y=tempSum_Y/(int32_t)FILTER_SIZE;
@@ -230,31 +238,31 @@ static void Gyroscope_Calibration(void)
 						filterRate=0;
 					}
 				}
-				for(uint32_t i=0;i<CALIBRATION_BUFFER_LENGTH;i++)
+				for(uint32_t i=0;i<CALIBRATION_tx_buffer_LENGTH;i++)
 				{
-					if(((int32_t)calibrationBuffer_X[i]-offset_x)>TempNoise_X)
+					if(((int32_t)calibrationtx_buffer_X[i]-offset_x)>TempNoise_X)
 					{
-						TempNoise_X=(int32_t)calibrationBuffer_X[i]-offset_x;
+						TempNoise_X=(int32_t)calibrationtx_buffer_X[i]-offset_x;
 					}
-					else if(((int32_t)calibrationBuffer_X[i]-offset_x)<-TempNoise_X)
+					else if(((int32_t)calibrationtx_buffer_X[i]-offset_x)<-TempNoise_X)
 					{
-						TempNoise_X=-((int32_t)calibrationBuffer_X[i]-offset_x);
+						TempNoise_X=-((int32_t)calibrationtx_buffer_X[i]-offset_x);
 					}
-					if(((int32_t)calibrationBuffer_Y[i]-offset_y)>TempNoise_Y)
+					if(((int32_t)calibrationtx_buffer_Y[i]-offset_y)>TempNoise_Y)
 					{
-						TempNoise_Y=(int32_t)calibrationBuffer_Y[i]-offset_y;
+						TempNoise_Y=(int32_t)calibrationtx_buffer_Y[i]-offset_y;
 					}
-					else if(((int32_t)calibrationBuffer_Y[i]-offset_y)<-TempNoise_Y)
+					else if(((int32_t)calibrationtx_buffer_Y[i]-offset_y)<-TempNoise_Y)
 					{
-						TempNoise_Y=-((int32_t)calibrationBuffer_Y[i]-offset_y);
+						TempNoise_Y=-((int32_t)calibrationtx_buffer_Y[i]-offset_y);
 					}
-					if(((int32_t)calibrationBuffer_Z[i]-offset_z)>TempNoise_Z)
+					if(((int32_t)calibrationtx_buffer_Z[i]-offset_z)>TempNoise_Z)
 					{
-						TempNoise_Z=(int32_t)calibrationBuffer_Z[i]-offset_z;
+						TempNoise_Z=(int32_t)calibrationtx_buffer_Z[i]-offset_z;
 					}
-					else if(((int32_t)calibrationBuffer_Z[i]-offset_z)<-TempNoise_Z)
+					else if(((int32_t)calibrationtx_buffer_Z[i]-offset_z)<-TempNoise_Z)
 					{
-						TempNoise_Z=-((int32_t)calibrationBuffer_Z[i]-offset_z);
+						TempNoise_Z=-((int32_t)calibrationtx_buffer_Z[i]-offset_z);
 					}
 				}
 
@@ -273,7 +281,6 @@ static void Gyroscope_Calibration(void)
 	}
 	currentGyroscopeState=GYROSCOPE_FIRST;
 	currentFlagState=GYROSCOPE_DATA_READY;
-
 }
 
 void Gyroscope_loop(void)
@@ -290,6 +297,18 @@ void Gyroscope_loop(void)
 			break;
 		case(GYROSCOPE_FINAL):
 			Gyroscope_Calibration();
+			snprintf(tx_buffer, tx_buffer_SIZE, "{\"Angle_X\": %.2f, \"Angle_Y\": %.2f, \"Angle_Z\": %.2f}\r\n", Angle_X, Angle_Y, Angle_Z);
+		    HAL_UART_Transmit(&huart1, (uint8_t *)tx_buffer, strlen(tx_buffer), HAL_MAX_DELAY);
+		    HAL_Delay(1);
+		    HAL_UART_Receive(&huart1, rx_buffer, 2, 100);
+		    while (rx_buffer[0] == '1')
+		    {
+		    	float x = Gyroscope_GetAngleX();
+		    	float y = Gyroscope_GetAngleY();
+		    	float z = Gyroscope_GetAngleZ();
+		    	snprintf(tx_buffer, tx_buffer_SIZE, "{\"Angle_X\": %.2f, \"Angle_Y\": %.2f, \"Angle_Z\": %.2f}\r\n", Angle_X, Angle_Y, Angle_Z);
+		    	HAL_Delay(1);
+		    }
 			break;
 		default:
 			break;
@@ -331,4 +350,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
         Gyroscope_SetDataReady();
     }
 }
+
+
 

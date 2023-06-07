@@ -6,7 +6,7 @@
 #endif
 
 	 void Gyroscope_Init(void);
-	 void Gyroscope_lopp(void);
+	 void Gyroscope_loop(void);
 	 void Gyroscope_SetDataReady(void);
 	 float Gyroscope_GetAngleX(void);
 	 float Gyroscope_GetAngleY(void);
